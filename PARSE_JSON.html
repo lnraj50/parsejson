@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI SDR — Nested JSON Data Parser</title>
+<style>
+:root{
+  --bg:#f4f7fb;--card:#fff;--text:#172033;--muted:#667085;
+  --border:#dbe2ea;--accent:#4f46e5;--accent2:#eef2ff;
+  --good:#15803d;--bad:#b42318;--warn:#b54708;--dark:#101828;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif}
+.wrap{max-width:1400px;margin:auto;padding:28px 20px 45px}
+h1{margin:0 0 6px;font-size:30px}.sub{color:var(--muted);font-size:14px;line-height:1.5}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;box-shadow:0 5px 20px #1018280a}
+.card h2{font-size:17px;margin:0 0 12px}
+.workflow{display:flex;align-items:center;justify-content:center;gap:10px;margin:20px 0}
+.step{display:flex;align-items:center;gap:9px;padding:10px 13px;border:1px solid var(--border);border-radius:11px;background:#fff}
+.step span{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#e9edf3;font-weight:800;font-size:12px}
+.step.active{background:var(--accent2);border-color:#c7d2fe}.step.active span{background:var(--accent);color:#fff}
+.step b{display:block;font-size:12px}.step small{display:block;color:var(--muted);font-size:10px;margin-top:2px}.arrow{font-size:20px;color:#98a2b3}
+.main-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+textarea{width:100%;min-height:340px;resize:vertical;border:1px solid var(--border);border-radius:12px;padding:15px;font:14px/1.55 Consolas,monospace;outline:none}
+textarea:focus,input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent2)}
+input{width:100%;border:1px solid var(--border);border-radius:10px;padding:11px;font-family:Consolas,monospace;outline:none}
+.buttons{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}
+button{border:0;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer}
+.primary{background:var(--accent);color:#fff}.secondary{background:#eef0f5;color:#263043}.success{background:#dcfce7;color:#166534}
+.status{margin-top:10px;min-height:19px;color:var(--muted);font-size:12px}.good{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+pre{margin:0;min-height:340px;max-height:550px;overflow:auto;background:var(--dark);color:#dbeafe;border-radius:12px;padding:15px;font:12px/1.55 Consolas,monospace;white-space:pre-wrap}
+.panel-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:20px}
+.panel{border:1px solid var(--border);border-radius:13px;padding:14px;background:#fafbfc}
+.panel h3{margin:0 0 10px;font-size:14px}.panel p{margin:4px 0;font-size:12px;color:var(--muted)}
+.panel code{font-size:11px;color:#344054}
+.nested-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px}
+.schema{margin-top:20px}.schema-row{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid #edf0f4}
+.schema-row:last-child{border-bottom:0}.badge{font-size:10px;font-weight:800;padding:4px 7px;border-radius:20px;background:#eef2ff;color:#3730a3;min-width:70px;text-align:center}
+footer{margin-top:18px;color:var(--muted);font-size:11px}
+@media(max-width:1000px){.panel-grid{grid-template-columns:1fr 1fr}.workflow{flex-wrap:wrap}.arrow{display:none}}
+@media(max-width:800px){.main-grid,.nested-grid{grid-template-columns:1fr}.panel-grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<h1>AI SDR — Unstructured Data → Nested JSON</h1>
+<div class="sub">Convert an SDR conversation, email, form response, or free-text message into a structured nested JSON record organized into <b>profile</b>, <b>qualification</b>, <b>message</b>, and <b>metadata</b>.</div>
+</header>
+
+<div class="workflow">
+  <div class="step active"><span>1</span><div><b>Unstructured Data</b><small>Lead message</small></div></div><div class="arrow">→</div>
+  <div class="step"><span>2</span><div><b>AI Extraction</b><small>OpenAI</small></div></div><div class="arrow">→</div>
+  <div class="step"><span>3</span><div><b>JSON Parsing</b><small>Validate + normalize</small></div></div><div class="arrow">→</div>
+  <div class="step"><span>4</span><div><b>Nested JSON</b><small>Final SDR record</small></div></div>
+</div>
+
+<div class="main-grid">
+<section class="card">
+<h2>1. Unstructured Lead Message</h2>
+<textarea id="input" placeholder="Example:
+Hi, I'm Rajesh Kumar from Acme Technologies. I'm the Head of Sales.
+My email is rajesh@acme.com and my mobile is +91 98765 43210.
+
+We have around 25 sales users. We're looking for an AI SDR to automate
+lead qualification and outbound follow-up. Our budget is around $2,000/month
+and we'd like to start next month."></textarea>
+
+<div style="margin-top:12px">
+<label style="font-size:12px;font-weight:700;display:block;margin-bottom:6px">AI Provider</label>
+<select id="provider" onchange="updateProvider()" style="width:100%;border:1px solid var(--border);border-radius:10px;padding:11px;background:#fff">
+  <option value="openai">OpenAI</option>
+  <option value="groq">Groq</option>
+</select>
+</div>
+
+<div style="margin-top:12px">
+<label id="apiLabel" style="font-size:12px;font-weight:700;display:block;margin-bottom:6px">OpenAI API Key</label>
+<input id="apiKey" type="password" autocomplete="off" placeholder="sk-...">
+<div id="providerHelp" style="font-size:11px;color:var(--muted);margin-top:5px">Runtime only. The key is not saved in this HTML file.</div>
+</div>
+
+<div style="margin-top:12px">
+<label style="font-size:12px;font-weight:700;display:block;margin-bottom:6px">Model</label>
+<select id="model" style="width:100%;border:1px solid var(--border);border-radius:10px;padding:11px;background:#fff">
+  <option value="gpt-4o-mini">OpenAI — gpt-4o-mini</option>
+</select>
+</div>
+
+<div class="buttons">
+<button class="primary" onclick="processLead()">Extract & Build Nested JSON</button>
+<button class="secondary" onclick="loadExample()">Load Example</button>
+<button class="secondary" onclick="clearAll()">Clear</button>
+</div>
+<div id="status" class="status"></div>
+</section>
+
+<section class="card">
+<h2>2. Raw OpenAI Response</h2>
+<pre id="rawOutput">{}</pre>
+<div id="aiStatus" class="status">Waiting for extraction…</div>
+</section>
+</div>
+
+<div class="nested-grid">
+<section class="card">
+<h2>3. Parsed & Validated JSON</h2>
+<pre id="parsedOutput">{}</pre>
+<div id="parseStatus" class="status">Waiting for parsing…</div>
+</section>
+
+<section class="card">
+<h2>4. Final Nested Structured JSON</h2>
+<pre id="output">{}</pre>
+<div id="finalStatus" class="status">Waiting for final record…</div>
+<div class="buttons">
+<button class="success" onclick="copyJSON()">Copy JSON</button>
+<button class="secondary" onclick="downloadJSON()">Download .json</button>
+</div>
+</section>
+</div>
+
+<section class="card" style="margin-top:20px">
+<h2>Nested Data Model</h2>
+<div class="panel-grid">
+<div class="panel"><h3>👤 profile</h3><p>Who is the prospect?</p><code>identity, contact, company, role</code></div>
+<div class="panel"><h3>🎯 qualification</h3><p>Is this a qualified opportunity?</p><code>need, budget, timeline, authority, fit, score</code></div>
+<div class="panel"><h3>💬 message</h3><p>What did the prospect communicate?</p><code>intent, pain_points, requirements, sentiment</code></div>
+<div class="panel"><h3>⚙️ metadata</h3><p>How should the record be managed?</p><code>source, status, timestamps, extraction</code></div>
+</div>
+</section>
+
+<section class="card schema">
+<h2>Expected Nested JSON Structure</h2>
+<div class="schema-row"><span class="badge">profile</span><div>identity → name, first_name, last_name<br>contact → email, mobile<br>company → name, website, industry, size<br>role → job_title, department</div></div>
+<div class="schema-row"><span class="badge">qualification</span><div>need → requirement, use_case<br>budget → amount, currency, stated<br>timeline → value, urgency<br>authority → decision_maker, role<br>fit → score, rationale<br>qualification_status</div></div>
+<div class="schema-row"><span class="badge">message</span><div>intent → primary, buying_signal<br>pain_points → array<br>requirements → array<br>questions → array<br>sentiment<br>source_message</div></div>
+<div class="schema-row"><span class="badge">metadata</span><div>lead_source, captured_at, extraction_model, extraction_version</div></div>
+</section>
+
+<footer>This internal tool supports OpenAI and Groq directly from the browser. For production or multi-user deployment, put the AI call behind a server or Make.com webhook so API credentials are not exposed to users.</footer>
+</div>
+
+<script>
+const emptyRecord={
+  profile:{
+    identity:{name:null,first_name:null,last_name:null},
+    contact:{email:null,mobile:null},
+    company:{name:null,website:null,industry:null,size:null},
+    role:{job_title:null,department:null}
+  },
+  qualification:{
+    need:{requirement:null,use_case:null},
+    budget:{amount:null,currency:null,stated:null},
+    timeline:{value:null,urgency:null},
+    authority:{decision_maker:null,role:null},
+    fit:{score:null,rationale:null},
+    qualification_status:"new"
+  },
+  message:{
+    intent:{primary:null,buying_signal:null},
+    pain_points:[],
+    requirements:[],
+    questions:[],
+    sentiment:null,
+    source_message:""
+  },
+  metadata:{
+    lead_source:"AI SDR",
+    captured_at:null,
+    extraction_model:"gpt-4o-mini",
+    provider:"openai",
+    extraction_version:"1.0"
+  }
+};
+
+function setStatus(id,text,cls="status"){
+ const el=document.getElementById(id); el.className=cls; el.textContent=text;
+}
+
+function promptFor(text){
+return `You are an AI SDR data structuring engine.
+
+Convert the unstructured prospect message into the EXACT nested JSON structure below.
+
+CRITICAL RULES:
+1. Return ONLY valid JSON. No markdown and no explanation.
+2. NEVER invent data. Missing values must be null or [].
+3. Preserve the complete input under message.source_message.
+4. Separate personal/contact/company information under profile.
+5. Put buying qualification information under qualification.
+6. Put what the prospect actually said, their intent, pain points, requirements and questions under message.
+7. Put operational/extraction information under metadata.
+8. Do not put the same field in multiple places unless necessary.
+9. qualification.fit.score must be an integer from 0-100 only when enough evidence exists; otherwise null.
+10. qualification.qualification_status must be one of: new, marketing_qualified, sales_qualified, opportunity, disqualified.
+11. budget.amount must be numeric when a numeric budget is explicitly stated.
+12. company.size must be numeric when an employee/user/seat count is explicitly stated.
+13. timeline.urgency should be one of: immediate, this_month, next_month, this_quarter, later, unknown.
+14. message.pain_points, requirements, and questions must be arrays of concise strings.
+15. Do not infer that someone is a decision maker unless explicitly stated or clearly identified by their role.
+16. Use null rather than "unknown" except where the schema explicitly specifies an enum.
+
+EXACT JSON SCHEMA:
+{
+  "profile": {
+    "identity": {
+      "name": "string | null",
+      "first_name": "string | null",
+      "last_name": "string | null"
+    },
+    "contact": {
+      "email": "string | null",
+      "mobile": "string | null"
+    },
+    "company": {
+      "name": "string | null",
+      "website": "string | null",
+      "industry": "string | null",
+      "size": "number | null"
+    },
+    "role": {
+      "job_title": "string | null",
+      "department": "string | null"
+    }
+  },
+  "qualification": {
+    "need": {
+      "requirement": "string | null",
+      "use_case": "string | null"
+    },
+    "budget": {
+      "amount": "number | null",
+      "currency": "string | null",
+      "stated": "string | null"
+    },
+    "timeline": {
+      "value": "string | null",
+      "urgency": "immediate | this_month | next_month | this_quarter | later | unknown"
+    },
+    "authority": {
+      "decision_maker": "boolean | null",
+      "role": "string | null"
+    },
+    "fit": {
+      "score": "number | null",
+      "rationale": "string | null"
+    },
+    "qualification_status": "new | marketing_qualified | sales_qualified | opportunity | disqualified"
+  },
+  "message": {
+    "intent": {
+      "primary": "string | null",
+      "buying_signal": "string | null"
+    },
+    "pain_points": ["string"],
+    "requirements": ["string"],
+    "questions": ["string"],
+    "sentiment": "string | null",
+    "source_message": "string"
+  },
+  "metadata": {
+    "lead_source": "AI SDR",
+    "captured_at": "ISO timestamp string | null",
+    "extraction_model": "model used",
+    "provider": "openai | groq",
+    "extraction_version": "1.0"
+  }
+}
+
+PROSPECT MESSAGE:
+${text}`;
+}
+
+function normalizeRecord(r,text){
+ const n=structuredClone(emptyRecord);
+ const copy=(target,source)=>{
+   if(!source || typeof source!=="object") return;
+   for(const k of Object.keys(target)){
+     if(Object.prototype.hasOwnProperty.call(source,k)) target[k]=source[k];
+   }
+ };
+ copy(n.profile.identity,r.profile?.identity);
+ copy(n.profile.contact,r.profile?.contact);
+ copy(n.profile.company,r.profile?.company);
+ copy(n.profile.role,r.profile?.role);
+ copy(n.qualification.need,r.qualification?.need);
+ copy(n.qualification.budget,r.qualification?.budget);
+ copy(n.qualification.timeline,r.qualification?.timeline);
+ copy(n.qualification.authority,r.qualification?.authority);
+ copy(n.qualification.fit,r.qualification?.fit);
+ if(r.qualification?.qualification_status) n.qualification.qualification_status=r.qualification.qualification_status;
+ copy(n.message.intent,r.message?.intent);
+ if(Array.isArray(r.message?.pain_points)) n.message.pain_points=r.message.pain_points;
+ if(Array.isArray(r.message?.requirements)) n.message.requirements=r.message.requirements;
+ if(Array.isArray(r.message?.questions)) n.message.questions=r.message.questions;
+ if(Object.prototype.hasOwnProperty.call(r.message||{},"sentiment")) n.message.sentiment=r.message.sentiment;
+ n.message.source_message=text;
+ if(r.metadata && typeof r.metadata==="object"){
+   if(r.metadata.lead_source) n.metadata.lead_source=r.metadata.lead_source;
+   if(r.metadata.captured_at) n.metadata.captured_at=r.metadata.captured_at;
+   if(r.metadata.extraction_model) n.metadata.extraction_model=r.metadata.extraction_model;
+   if(r.metadata.provider) n.metadata.provider=r.metadata.provider;
+   if(r.metadata.extraction_version) n.metadata.extraction_version=r.metadata.extraction_version;
+ }
+ return n;
+}
+
+function updateProvider(){
+ const provider=document.getElementById("provider").value;
+ const label=document.getElementById("apiLabel");
+ const key=document.getElementById("apiKey");
+ const model=document.getElementById("model");
+
+ model.innerHTML="";
+
+ if(provider==="groq"){
+   label.textContent="Groq API Key";
+   key.placeholder="gsk_...";
+   document.getElementById("providerHelp").textContent="Runtime only. The key is not saved in this HTML file.";
+   [
+     ["llama-3.3-70b-versatile","Groq — llama-3.3-70b-versatile"],
+     ["llama-3.1-8b-instant","Groq — llama-3.1-8b-instant"]
+   ].forEach(([v,t])=>{
+     const o=document.createElement("option");o.value=v;o.textContent=t;model.appendChild(o);
+   });
+ }else{
+   label.textContent="OpenAI API Key";
+   key.placeholder="sk-...";
+   document.getElementById("providerHelp").textContent="Runtime only. The key is not saved in this HTML file.";
+   const o=document.createElement("option");o.value="gpt-4o-mini";o.textContent="OpenAI — gpt-4o-mini";model.appendChild(o);
+ }
+}
+
+updateProvider();
+
+async function processLead(){
+ const text=document.getElementById("input").value.trim();
+ const key=document.getElementById("apiKey").value.trim();
+ const provider=document.getElementById("provider").value;
+ const model=document.getElementById("model").value;
+
+ if(!text){setStatus("status","Please enter a lead message.","status bad");return}
+ if(!key){setStatus("status",`Please enter your ${provider==="groq"?"Groq":"OpenAI"} API key.`,"status bad");return}
+
+ setStatus("status",`1/4 Sending unstructured data to ${provider==="groq"?"Groq":"OpenAI"}…`,"status warn");
+
+ const endpoint=provider==="groq"
+   ? "https://api.groq.com/openai/v1/chat/completions"
+   : "https://api.openai.com/v1/chat/completions";
+
+ try{
+  const response=await fetch(endpoint,{
+   method:"POST",
+   headers:{
+     "Content-Type":"application/json",
+     "Authorization":"Bearer "+key
+   },
+   body:JSON.stringify({
+    model:model,
+    temperature:0,
+    response_format:{type:"json_object"},
+    messages:[
+      {
+        role:"system",
+        content:"You are a precise AI SDR data extraction engine. Return only valid JSON."
+      },
+      {
+        role:"user",
+        content:promptFor(text)
+      }
+    ]
+   })
+  });
+
+  if(!response.ok){
+   const err=await response.json().catch(()=>({}));
+   throw new Error(err?.error?.message||`${provider==="groq"?"Groq":"OpenAI"} request failed (${response.status})`);
+  }
+
+  const data=await response.json();
+  const content=data?.choices?.[0]?.message?.content;
+  if(!content) throw new Error(`${provider==="groq"?"Groq":"OpenAI"} returned no content.`);
+
+  document.getElementById("rawOutput").textContent=content;
+  setStatus("aiStatus",`2/4 ${provider==="groq"?"Groq":"OpenAI"} extraction completed.`,"status good");
+
+  let parsed;
+  try{parsed=JSON.parse(content)}
+  catch(e){
+   document.getElementById("parsedOutput").textContent=content;
+   setStatus("parseStatus","3/4 Invalid JSON returned by provider.","status bad");
+   throw new Error("The AI provider returned invalid JSON.");
+  }
+
+  document.getElementById("parsedOutput").textContent=JSON.stringify(parsed,null,2);
+  setStatus("parseStatus","3/4 JSON parsed successfully.","status good");
+
+  const finalRecord=normalizeRecord(parsed,text);
+  finalRecord.metadata.extraction_model=model;
+  finalRecord.metadata.provider=provider;
+
+  document.getElementById("output").textContent=JSON.stringify(finalRecord,null,2);
+
+  const populated=[
+    finalRecord.profile.identity.name,
+    finalRecord.profile.contact.email,
+    finalRecord.profile.contact.mobile,
+    finalRecord.profile.company.name,
+    finalRecord.profile.role.job_title,
+    finalRecord.qualification.need.requirement,
+    finalRecord.qualification.budget.amount,
+    finalRecord.qualification.timeline.value,
+    finalRecord.message.intent.primary
+  ].filter(v=>v!==null && v!=="").length;
+
+  setStatus("finalStatus",`4/4 Nested JSON ready — ${populated} key fields populated.`,"status good");
+  setStatus("status",`Complete: ${provider} → JSON parsing → nested SDR record.`,"status good");
+ }catch(error){
+  console.error(error);
+  setStatus("status",error.message||"Processing failed.","status bad");
+ }
+}
+function loadExample(){
+ document.getElementById("input").value=`Hi, I'm Rajesh Kumar from Acme Technologies. I'm the Head of Sales.
+My email is rajesh@acme.com and my mobile is +91 98765 43210.
+
+We have around 25 sales users. We're looking for an AI SDR to automate
+lead qualification and outbound follow-up. Our budget is around $2,000/month
+and we'd like to start next month.
+
+The main problem is that our reps spend too much time researching prospects.
+I would like to know whether your platform integrates with Salesforce.`;
+ setStatus("status","Example loaded. Enter your API key and run extraction.","status");
+}
+
+function clearAll(){
+ document.getElementById("input").value="";
+ document.getElementById("rawOutput").textContent="{}";
+ document.getElementById("parsedOutput").textContent="{}";
+ document.getElementById("output").textContent="{}";
+ document.getElementById("status").textContent="";
+ setStatus("aiStatus","Waiting for extraction…");
+ setStatus("parseStatus","Waiting for parsing…");
+ setStatus("finalStatus","Waiting for final record…");
+}
+
+async function copyJSON(){
+ await navigator.clipboard.writeText(document.getElementById("output").textContent);
+ setStatus("finalStatus","Final nested JSON copied to clipboard.","status good");
+}
+function downloadJSON(){
+ const blob=new Blob([document.getElementById("output").textContent],{type:"application/json"});
+ const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="ai-sdr-lead.json";a.click();
+ URL.revokeObjectURL(a.href);
+}
+</script>
+</body>
+</html>
