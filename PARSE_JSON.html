@@ -320,8 +320,8 @@ function updateProvider(){
    key.placeholder="gsk_...";
    document.getElementById("providerHelp").textContent="Runtime only. The key is not saved in this HTML file.";
    [
-     ["llama-3.3-70b-versatile","Groq — llama-3.3-70b-versatile"],
-     ["llama-3.1-8b-instant","Groq — llama-3.1-8b-instant"]
+     ["openai/gpt-oss-120b","Groq — openai/gpt-oss-120b"],
+     ["openai/gpt-oss-20b","Groq — openai/gpt-oss-20b"]
    ].forEach(([v,t])=>{
      const o=document.createElement("option");o.value=v;o.textContent=t;model.appendChild(o);
    });
